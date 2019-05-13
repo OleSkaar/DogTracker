@@ -44,6 +44,7 @@ void setup() {
   Serial.begin(9600);
   pinMode(kp, INPUT);
   pinMode(pz, OUTPUT);
+  // Sett opp LED. Brightness gaar fra 0 til 255
   strip.begin();
   strip.setBrightness(32);
   strip.show(); // Initialize all pixels to 'off'
@@ -69,11 +70,6 @@ void loop() {
   } else {
     harTrykket = false;
   }
-  /*
-  colorWipe(strip.Color(255, 0, 0), 50); // Red
-  colorWipe(strip.Color(0, 255, 0), 50); // Green
-  colorWipe(strip.Color(0, 0, 255), 50); // Blue
-  */
 }
 
 void buttonClick() {
@@ -106,12 +102,4 @@ void fullfortOvelse() {
   tone(pz,1319,850);
   delay(800);
   noTone(pz);
-}
-
-void colorWipe(uint32_t c, uint8_t wait) {
-  for(uint16_t i=0; i<strip.numPixels(); i++) {
-    strip.setPixelColor(i, c);
-    strip.show();
-    delay(wait);
-  }
 }
