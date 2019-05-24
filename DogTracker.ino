@@ -1,9 +1,14 @@
 /*
-  DogTracker 0.2 Alpha
+  DogTracker 0.2.1  Alpha
+
+  Bruker LED-ringen til å vise om nåværende bruker ligger foran eller bak den andre brukeren.
 
   Dings som kan hjelpe til aa motivere hundeeiere ved aa lagre og vise ukentlig treningsprogresjon.
 
-  Med LED-ringer, piezo, og potentiometer som kontroller
+  Lar to forskjellige brukere bruke samme dings til å konkurrere. 
+  Denne versjonen bruker LED-ring for å vise om aktiv bruker er foran, lik, eller bak den andre brukeren i poeng.
+
+  Med LED-ringe, piezo, og potentiometer som kontroller
 
   Guide til LED: 
 
@@ -19,7 +24,7 @@ const int kp = 10, pz = 6, ledStrip = 5, ledRing = 9, potPin = A0;
 
 // Oppsett av LEDs
 Adafruit_NeoPixel ring = Adafruit_NeoPixel(12, ledRing, NEO_GRB + NEO_KHZ800);
-Adafruit_NeoPixel strip = Adafruit_NeoPixel(8, ledStrip, NEO_GRB + NEO_KHZ800);
+//Adafruit_NeoPixel strip = Adafruit_NeoPixel(8, ledStrip, NEO_GRB + NEO_KHZ800);
 
 // oppsett
 int repetisjoner = 0;
@@ -55,8 +60,8 @@ int bruker1Sitt;
 int bruker1Bli;
 int bruker1Kom;
 
-int bruker2Sitt = 1;
-int bruker2Bli = 2;
+int bruker2Sitt = 0;
+int bruker2Bli = 0;
 int bruker2Kom = 0;
 
 int sittReps;
@@ -81,9 +86,11 @@ void setup() {
   ring.begin();
   ring.setBrightness(32);
   ring.show(); // Initialize all pixels to 'off'
+  /*
   strip.begin();
   strip.setBrightness(255);
   strip.show(); // Initialize all pixels to 'off'
+  */
   Serial.begin(9600);
   hentUkentligPoeng();
   oppdaterUkentligLED();
@@ -120,7 +127,7 @@ void loop() {
 void buttonClick() {
    repetisjoner++;
    // Lys opp en ny LED
-   ring.setPixelColor(repetisjoner - 1, 0, 255, 05);
+   ring.setPixelColor(repetisjoner - 1, 255, 255, 255);
    ring.show();
  }
 
@@ -173,7 +180,25 @@ void oppdaterOvelseLED(int poeng) {
   ring.show();
 }
 
+
 void oppdaterUkentligLED() {
+  // Aktiv bruker = 11
+  // Annen bruker = 7
+  int annenBruker = hentAnnenBruker();
+  int aktivBrukerPoeng = ukentligPoeng[aktivBruker];
+  int annenBrukerPoeng = ukentligPoeng[annenBruker];
+  if (aktivBrukerPoeng == annenBrukerPoeng) {
+    ring.setPixelColor(7, 255, 255, 0);
+    ring.setPixelColor(11, 255, 255, 0);
+  } else if (aktivBrukerPoeng > annenBrukerPoeng) {
+    ring.setPixelColor(7, 255, 0, 0);
+    ring.setPixelColor(11, 0, 255, 0);
+  } else {
+    ring.setPixelColor(7, 0, 255, 0);
+    ring.setPixelColor(11, 255, 0, 0);
+  }
+
+  /*
   int poeng = ukentligPoeng[aktivBruker];
   int annenBruker = hentAnnenBruker();
   strip.clear();
@@ -193,13 +218,16 @@ void oppdaterUkentligLED() {
     
   }
   strip.show();
+  */
 }
+
 
 void lesOvelse() {
     potVal = analogRead(potPin);
     angle = map(potVal, 0, 1023, 0, 179);
+    //Serial.println(angle);
 
-  if (aktivOvelse != 0 && angle >= 0 && angle < 60) {
+  if (aktivOvelse != 0 && angle >= 0 && angle < 85) {
     
     Serial.println(angle);
     Serial.println("kom");
@@ -208,7 +236,7 @@ void lesOvelse() {
     oppdaterOvelseLED(brukerOgPoengMatrise[aktivBruker][aktivOvelse]);
   }
 
-  if (aktivOvelse != 1 && angle >= 60 && angle < 120) {
+  if (aktivOvelse != 1 && angle >= 85 && angle < 100) {
     
     Serial.println(angle);
     Serial.println("sitt");
@@ -217,7 +245,7 @@ void lesOvelse() {
     oppdaterOvelseLED(brukerOgPoengMatrise[aktivBruker][aktivOvelse]);
   }
 
-  if (aktivOvelse != 2 && angle >= 120 && angle < 180) {
+  if (aktivOvelse != 2 && angle >= 100 && angle < 180) {
     
     Serial.println(angle);
     Serial.println("bli");
