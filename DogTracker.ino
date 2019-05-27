@@ -1,5 +1,5 @@
 /*
-  DogTracker 0.2.3  Alpha
+  DogTracker 0.2.4  Alpha
 
   Bruker LED-ringen til å vise om nåværende bruker ligger foran eller bak den andre brukeren.
 
@@ -16,7 +16,7 @@
 
   Kode basert paa SDFat sitt eksempel: 
 
-  https://github.com/greiman/SdFat/blob/master/examples/ReadWrite/ReadWrite.ino
+  https://github.com/bgreiman/SdFat/blob/master/examples/ReadWrite/ReadWrite.ino
 
 */
 
@@ -24,6 +24,7 @@
 #include <Adafruit_NeoPixel.h>
 #include <SPI.h>
 #include "SdFat.h"
+#include <EEPROM.h>
 
 // Oppsett av pins
 const int kp = 5, br = 8, pz = 6, ledRing = 9, potPin = A0;
@@ -88,8 +89,10 @@ void setup() {
 
   SDKortoppsett();
   int annenBruker = hentAnnenBruker();
-  ukentligPoeng[aktivBruker] = hentVerdiIFil(filnavn(aktivBruker));
-  ukentligPoeng[annenBruker] = hentVerdiIFil(filnavn(annenBruker));
+  //ukentligPoeng[aktivBruker] = hentVerdiIFil(filnavn(aktivBruker));
+  //ukentligPoeng[annenBruker] = hentVerdiIFil(filnavn(annenBruker));
+  ukentligPoeng[aktivBruker] = lesFraEEPROM(aktivBruker);
+  ukentligPoeng[annenBruker] = lesFraEEPROM(annenBruker);
   Serial.println(aktivBruker);
   Serial.println(annenBruker);
   Serial.println(hentVerdiIFil(filnavn(aktivBruker)));
@@ -201,8 +204,15 @@ void fullfortOvelse() {
   noTone(pz);
   ring.setPixelColor(startPunktOvelseLED - brukerOgPoengMatrise[aktivBruker][aktivOvelse],blaa);
   ukentligPoeng[aktivBruker]++;
-  oppdaterVerdiIFil(filnavn(aktivBruker), ukentligPoeng[aktivBruker]);
+  Serial.println("Ukentlig poeng lagt til:");
+  Serial.println(ukentligPoeng[aktivBruker]);
+  byte poengIByte = intTilByte(ukentligPoeng[aktivBruker]);
+  //oppdaterVerdiIFil(filnavn(aktivBruker), poengIByte);
+  skrivTilEEPROM(ukentligPoeng[aktivBruker]);
+  //Serial.println("Naavaerende poeng for aktiv bruker: ");
+  //Serial.println(hentVerdiIFil(filnavn(aktivBruker)));
   oppdaterUkentligLED();
+  lesFraEEPROM(aktivBruker);
 }
 
 void oppdaterOvelseLED(int poeng) {
@@ -308,11 +318,11 @@ void hentUkentligPoeng() {
   }
 }
 
-void oppdaterVerdiIFil(String filN, int nyVerdi) {
+void oppdaterVerdiIFil(String filN, String nyVerdi) {
   File filen = SD.open(filN, FILE_WRITE);
   filen.remove();
   filen = SD.open(filN, FILE_WRITE);
-  filen.write(nyVerdi);
+  filen.println(nyVerdi);
   filen.close();
 }
 byte hentVerdiIFil(String filN) {
@@ -322,6 +332,20 @@ byte hentVerdiIFil(String filN) {
     verdi += filen.read();
   }
   filen.close();
+  return verdi;
+}
+
+void skrivTilEEPROM(int verdi) {
+  EEPROM.write(aktivBruker, verdi);
+}
+
+byte lesFraEEPROM(int bruker) {
+  byte verdi;
+  verdi = EEPROM.read(bruker);
+  Serial.print(bruker);
+  Serial.print("\t");
+  Serial.print(verdi, DEC);
+  Serial.println();
   return verdi;
 }
 
@@ -337,4 +361,10 @@ void SDKortoppsett() {
 String filnavn(int bruker) {
   String filNavn = "bruker" + String(bruker) + ".txt";
   return filNavn;
+}
+
+byte intTilByte (int verdi) {
+  if (verdi < 256 && verdi > 0) {
+    return (byte) verdi;
+  }
 }
