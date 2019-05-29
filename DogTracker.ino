@@ -1,57 +1,36 @@
 /*
-  DogTracker 0.2.4  Alpha
-
-  Bruker LED-ringen til å vise om nåværende bruker ligger foran eller bak den andre brukeren.
+  DogTracker 0.2  Alpha
 
   Dings som kan hjelpe til aa motivere hundeeiere ved aa lagre og vise ukentlig treningsprogresjon.
 
-  Lar to forskjellige brukere bruke samme dings til å konkurrere. 
-  Denne versjonen bruker LED-ring for å vise om aktiv bruker er foran, lik, eller bak den andre brukeren i poeng.
-
-  Med LED-ringe, piezo, og potentiometer som kontroller
+  Med LED-ringer, piezo, og potentiometer som kontroller
 
   Guide til LED: 
 
   https://learn.adafruit.com/adafruit-neopixel-uberguide/arduino-library-use
 
-  Kode basert paa SDFat sitt eksempel: 
-
-  https://github.com/bgreiman/SdFat/blob/master/examples/ReadWrite/ReadWrite.ino
-
 */
 
 // Import
 #include <Adafruit_NeoPixel.h>
-#include <SPI.h>
-#include "SdFat.h"
-#include <EEPROM.h>
 
 // Oppsett av pins
-const int kp = 5, br = 8, pz = 6, ledRing = 9, potPin = A0;
+const int kp = 10, pz = 6, ledStrip = 5, ledRing = 9, potPin = A0;
 
 // Oppsett av LEDs
 Adafruit_NeoPixel ring = Adafruit_NeoPixel(12, ledRing, NEO_GRB + NEO_KHZ800);
-uint32_t gul = ring.Color(255, 255, 0);
-uint32_t hvit = ring.Color(255, 255, 255);
-uint32_t blaa = ring.Color(0, 0, 255);
-uint32_t rod = ring.Color(255, 0, 0);
-uint32_t gronn = ring.Color(0, 255, 0);
+Adafruit_NeoPixel strip = Adafruit_NeoPixel(8, ledStrip, NEO_GRB + NEO_KHZ800);
 
 // oppsett
-//int repetisjoner = 0;
+int repetisjoner = 0;
+//int ovelser = 0;
 int ovelserPerDag = 3;
-const int maksRepsPerOvelse = 7;
+const int repsPerOvelse = 7;
 int antallTrykk = 0;
 int knapp;
-int bryter;
-// debounce 
-const int debounceTid = 50;
-unsigned long sisteDebounceReps = 0;
-boolean harTrykketReps = false;
-unsigned long sisteDebouncePot = 0;
-boolean harTrykketPot = false;
-int sjekkOvelse;
-
+int debounceTid = 50;
+unsigned long sisteDebounce = 0;
+boolean harTrykket = false;
 int startPunktOvelseLED = 11;
 int potVal;
 int angle;
@@ -59,87 +38,60 @@ int aktivOvelse;
 int aktivBruker;
 const int antallOvelser = 3;
 const int antallBrukere = 2;
-SdFat SD;
-File dataFil;
-#define SD_CS_PIN SS
 
-int repsPerOvelse[antallBrukere][antallOvelser];
 int brukerOgPoengMatrise[antallBrukere][antallOvelser];
 int aktivOvelsePoeng;
 int ukentligPoeng[antallBrukere];
 
+// datoer
+// Date forrigeDato;
+// Date dagensDato;
+
 // brukervariabler
+int bruker1Poeng;
+int bruker2Poeng;
 
 int bruker1Sitt;
 int bruker1Bli;
 int bruker1Kom;
 
-int bruker2Sitt = 0;
-int bruker2Bli = 0;
-int bruker2Kom = 0;
+int bruker2Sitt = 3;
+int bruker2Bli = 3;
+int bruker2Kom = 3;
+
+int sittReps;
+int bliReps;
+int komReps;
 
 void setup() {
-  Serial.begin(9600);
-  ring.begin();
-  ring.setBrightness(32);
-  ring.show();
+  // Hent dato fra GPS, sjekker om det er en ny uke, 
+  // hvis ja nullstill, hvis ikke, last inn brukerpoeng for denne uken
+  // Hvis det er en ny dag, nullstill repetisjoner og ovelser, hvis ikke,
+  // hent ukentlig poeng fra minnet
 
-  fyllPoeng();
-  sjekkAktivBrukerBryter();
-
-  SDKortoppsett();
-  int annenBruker = hentAnnenBruker();
-  //ukentligPoeng[aktivBruker] = hentVerdiIFil(filnavn(aktivBruker));
-  //ukentligPoeng[annenBruker] = hentVerdiIFil(filnavn(annenBruker));
-  ukentligPoeng[aktivBruker] = lesFraEEPROM(aktivBruker);
-  ukentligPoeng[annenBruker] = lesFraEEPROM(annenBruker);
-  Serial.println(aktivBruker);
-  Serial.println(annenBruker);
-  Serial.println(hentVerdiIFil(filnavn(aktivBruker)));
-  Serial.println(hentVerdiIFil(filnavn(annenBruker)));
-  Serial.println("Aktiv bruker poeng:");
-  Serial.println(ukentligPoeng[aktivBruker]);
-  Serial.println("Annen bruker poeng:");
-  Serial.println(ukentligPoeng[annenBruker]);
-  aktivOvelsePoeng = brukerOgPoengMatrise[aktivBruker][aktivOvelse];
-  oppdaterOvelseLED(aktivOvelsePoeng);
+   fyllPoeng();
+   aktivBruker = 1;
+   
+   aktivOvelsePoeng = brukerOgPoengMatrise[aktivBruker][aktivOvelse];
+   oppdaterOvelseLED(aktivOvelsePoeng);
   
   pinMode(kp, INPUT);
   pinMode(pz, OUTPUT);
   // Sett opp LED. Brightness gaar fra 0 til 255
-
+  ring.begin();
+  ring.setBrightness(32 );
+  ring.show(); // Initialize all pixels to 'off'
+  strip.begin();
+  strip.setBrightness(255);
+  strip.show(); // Initialize all pixels to 'off'
+  Serial.begin(9600);
   hentUkentligPoeng();
   oppdaterUkentligLED();
 }
 
-void sjekkAktivBrukerBryter() {
-  bryter = digitalRead(br);
-  if (bryter != aktivBruker) {
-    fyllRepLEDs();
-    aktivBruker = bryter;
-    oppdaterUkentligLED();
-    oppdaterOvelseLED(brukerOgPoengMatrise[aktivBruker][aktivOvelse]);
-    repsPerOvelse[aktivBruker][aktivOvelse] = 0;
-  }
-}
-
-
 void loop() {
-  sjekkAktivBrukerBryter();
-  sjekkOvelse = lesOvelse();
-  if (sjekkOvelse != aktivOvelse) {
-    if (lesOvelse() && debounce(sisteDebouncePot)) {
-      if (!harTrykketPot) {
-        byttOvelse(sjekkOvelse); 
-      }
-      harTrykketPot = true;
-      sisteDebouncePot = millis();
-    }
-  } else {
-    harTrykketPot = false;
-  }
- 
-  if (repsPerOvelse[aktivBruker][aktivOvelse] == maksRepsPerOvelse) {
+  lesOvelse();
+  if (repetisjoner == repsPerOvelse) {
     if (aktivOvelsePoeng < ovelserPerDag) {
       brukerOgPoengMatrise[aktivBruker][aktivOvelse]++;
       fullfortOvelse();
@@ -149,40 +101,37 @@ void loop() {
   
   knapp = digitalRead(kp);
   if (knapp == 1) {
-    if (digitalRead(kp) == 1 && debounce(sisteDebounceReps)) {
-      if (!harTrykketReps) {
-          if (repsPerOvelse[aktivBruker][aktivOvelse] < maksRepsPerOvelse && 
+    if (digitalRead(kp) == 1 && debounce()) {
+      if (!harTrykket) {
+        antallTrykk += 1;
+          if (repetisjoner < repsPerOvelse && 
           brukerOgPoengMatrise[aktivBruker][aktivOvelse] != ovelserPerDag) {
             buttonClick();
           }
-        harTrykketReps = true;
-        sisteDebounceReps = millis();
+        harTrykket = true;
+        sisteDebounce = millis();
       } 
     } 
   } else {
-    harTrykketReps = false;
+    harTrykket = false;
   }
 }
 
 void buttonClick() {
-   repsPerOvelse[aktivBruker][aktivOvelse]++;
+   repetisjoner++;
    // Lys opp en ny LED
-   ring.setPixelColor(repsPerOvelse[aktivBruker][aktivOvelse] - 1, hvit);
+   ring.setPixelColor(repetisjoner - 1, 0, 255, 05);
    ring.show();
  }
 
 void reset() {
-  repsPerOvelse[aktivBruker][aktivOvelse] = 0;
+  repetisjoner = 0;
   // Fjern LED lys
-  resetRepLEDs();
-}
-
-void resetRepLEDs() {
-  ring.fill(0, 0, maksRepsPerOvelse);
+  ring.fill(0, 0, repsPerOvelse);
   ring.show();
 }
 
-boolean debounce(unsigned long sisteDebounce) {
+boolean debounce() {
   return (millis() - sisteDebounce) >= debounceTid;
 }
 
@@ -202,103 +151,81 @@ void fullfortOvelse() {
   tone(pz,1319,850);
   delay(800);
   noTone(pz);
-  ring.setPixelColor(startPunktOvelseLED - brukerOgPoengMatrise[aktivBruker][aktivOvelse],blaa);
+  ring.setPixelColor(startPunktOvelseLED - brukerOgPoengMatrise[aktivBruker][aktivOvelse],255);
   ukentligPoeng[aktivBruker]++;
-  Serial.println("Ukentlig poeng lagt til:");
-  Serial.println(ukentligPoeng[aktivBruker]);
-  byte poengIByte = intTilByte(ukentligPoeng[aktivBruker]);
-  //oppdaterVerdiIFil(filnavn(aktivBruker), poengIByte);
-  skrivTilEEPROM(ukentligPoeng[aktivBruker]);
-  //Serial.println("Naavaerende poeng for aktiv bruker: ");
-  //Serial.println(hentVerdiIFil(filnavn(aktivBruker)));
   oppdaterUkentligLED();
-  lesFraEEPROM(aktivBruker);
 }
 
 void oppdaterOvelseLED(int poeng) {
+  //ring.fill(0, startPunktOvelseLED-2, 3);
   ring.setPixelColor(10, 0);
   ring.setPixelColor(9, 0);
   ring.setPixelColor(8, 0);
   if (poeng >= 1) {
-    ring.setPixelColor(10, blaa);
+    ring.setPixelColor(10, 255);
   }
   if (poeng >= 2) {
-    ring.setPixelColor(9, blaa);
+    ring.setPixelColor(9, 255);
   }
   if (poeng == 3) {
-    ring.setPixelColor(8, blaa);
+    ring.setPixelColor(8, 255);
   }
   ring.show();
 }
-
 
 void oppdaterUkentligLED() {
-  // Aktiv bruker = 11
-  // Annen bruker = 7
+  int poeng = ukentligPoeng[aktivBruker];
   int annenBruker = hentAnnenBruker();
-  int aktivBrukerPoeng = ukentligPoeng[aktivBruker];
-  int annenBrukerPoeng = ukentligPoeng[annenBruker];
-  if (aktivBrukerPoeng == annenBrukerPoeng) {
-    ring.setPixelColor(7, gul);
-    ring.setPixelColor(11, gul);
-  } else if (aktivBrukerPoeng > annenBrukerPoeng) {
-    ring.setPixelColor(7, rod);
-    ring.setPixelColor(11, gronn);
-  } else {
-    ring.setPixelColor(7, gronn);
-    ring.setPixelColor(11, rod);
-  }
-  ring.show();
-}
-
-int lesOvelse() {
-    potVal = analogRead(potPin);
-    angle = map(potVal, 0, 1023, 0, 179);
-    int ovelse;
-    if (angle >= 0 && angle < 50) {
-      ovelse = 0;
-      //Serial.println(angle);
-      //Serial.println("kom");
-    } else if (angle >= 70 && angle < 120) {
-      ovelse = 1;
-      //Serial.println(angle);
-      //Serial.println("sitt");
-    } else if (angle >= 130 && angle < 180) {
-      ovelse = 2;
-      //Serial.println(angle);
-      //Serial.println("bli");
+  strip.clear();
+  Serial.println(poeng);
+  for (int i = 0; i < poeng; i++) {
+    int teller = 0;
+    int farge = strip.getPixelColor(teller);
+    if (farge + 42 > 255) {
+      teller++;
+      farge = strip.getPixelColor(teller);
+    }
+    if (ukentligPoeng[aktivBruker] >= ukentligPoeng[annenBruker]) {
+      strip.setPixelColor(teller, 0, 0, farge + 42);
     } else {
-      ovelse = aktivOvelse;
+      strip.setPixelColor(teller, farge + 42, 0, 0);
     }
     
-    return ovelse;
+  }
+  strip.show();
 }
 
+void lesOvelse() {
+    potVal = analogRead(potPin);
+    angle = map(potVal, 0, 1023, 0, 179);
 
-void byttOvelse(int nyOvelse) {
-
-  if (aktivOvelse != 0 && nyOvelse == 0) {
-      aktivOvelse = 0;
-      Serial.println("Ovelse 0");
-  } else if (aktivOvelse != 1 && nyOvelse == 1) {
-      aktivOvelse = 1;
-      Serial.println("Ovelse 1");
-  } else if (aktivOvelse != 2 && nyOvelse == 2) {
-      aktivOvelse = 2;
-      Serial.println("Ovelse 2");
-  }
-  // Sett repLEDs til 0, og fjern repetisjoner paa forrige ovelse
-    resetRepLEDs();
-    fyllRepLEDs();
+  if (aktivOvelse != 0 && angle >= 0 && angle < 60) {
+    
+    Serial.println(angle);
+    Serial.println("kom");
+    
+    aktivOvelse = 0;
     oppdaterOvelseLED(brukerOgPoengMatrise[aktivBruker][aktivOvelse]);
-}
-
-void fyllRepLEDs() {
-  int reps = repsPerOvelse[aktivBruker][aktivOvelse];
-  for (int i = 0; i < reps; i++) {
-    ring.setPixelColor(i, hvit);
   }
-  ring.show();
+
+  if (aktivOvelse != 1 && angle >= 60 && angle < 120) {
+    
+    Serial.println(angle);
+    Serial.println("sitt");
+    
+    aktivOvelse = 1;
+    oppdaterOvelseLED(brukerOgPoengMatrise[aktivBruker][aktivOvelse]);
+  }
+
+  if (aktivOvelse != 2 && angle >= 120 && angle < 180) {
+    
+    Serial.println(angle);
+    Serial.println("bli");
+    
+    aktivOvelse = 2;
+    oppdaterOvelseLED(brukerOgPoengMatrise[aktivBruker][aktivOvelse]);
+  }
+  delay(50);
 }
 
 void fyllPoeng() {
@@ -315,56 +242,5 @@ void hentUkentligPoeng() {
     for (int j = 0; j < antallOvelser; j++) {
       ukentligPoeng[i] += brukerOgPoengMatrise[i][j];
     }
-  }
-}
-
-void oppdaterVerdiIFil(String filN, String nyVerdi) {
-  File filen = SD.open(filN, FILE_WRITE);
-  filen.remove();
-  filen = SD.open(filN, FILE_WRITE);
-  filen.println(nyVerdi);
-  filen.close();
-}
-byte hentVerdiIFil(String filN) {
-  File filen = SD.open(filN);
-  byte verdi;
-  while (filen.available()) {
-    verdi += filen.read();
-  }
-  filen.close();
-  return verdi;
-}
-
-void skrivTilEEPROM(int verdi) {
-  EEPROM.write(aktivBruker, verdi);
-}
-
-byte lesFraEEPROM(int bruker) {
-  byte verdi;
-  verdi = EEPROM.read(bruker);
-  Serial.print(bruker);
-  Serial.print("\t");
-  Serial.print(verdi, DEC);
-  Serial.println();
-  return verdi;
-}
-
-void SDKortoppsett() {
-    // Kobler opp SD-kort
-  if (!SD.begin(SD_CS_PIN)) {
-    Serial.println("Oppsett av SD-kort feilet.");
-    return;
-  }
-  Serial.println("Oppsett av SD-kort fullført.");
-}
-
-String filnavn(int bruker) {
-  String filNavn = "bruker" + String(bruker) + ".txt";
-  return filNavn;
-}
-
-byte intTilByte (int verdi) {
-  if (verdi < 256 && verdi > 0) {
-    return (byte) verdi;
   }
 }
