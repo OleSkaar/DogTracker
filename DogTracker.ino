@@ -227,26 +227,29 @@ void oppdaterOvelseLED(int poeng) {
 
 
 void oppdaterUkentligLED() {
-  // Aktiv bruker = LED 11
-  // Annen bruker = LED 7
-  // Hent poeng for aktiv og annen bruker
-  
-  int annenBruker = hentAnnenBruker();
-  int aktivBrukerPoeng = ukentligPoeng[aktivBruker];
-  int annenBrukerPoeng = ukentligPoeng[annenBruker];
-  
+  // Spiller 1 = LED 11
+  // Spiller 2 = LED 7
+  // Hent poeng for spiller 1 og spiller 2
+
+  int spiller1 = 11;
+  int spiller2 = 7;
+
+  int spiller1Poeng = ukentligPoeng[0];
+  int spiller2Poeng = ukentligPoeng[1];
+
   // Sammenlign poeng og oppdater. Brukeren som leder skal ha 
   // gront lys, den andre skal ha rodt. Hvis de har like mye poeng
   // skal begge ha gult lys
-  if (aktivBrukerPoeng == annenBrukerPoeng) {
-    ring.setPixelColor(7, gul);
-    ring.setPixelColor(11, gul);
-  } else if (aktivBrukerPoeng > annenBrukerPoeng) {
-    ring.setPixelColor(7, rod);
-    ring.setPixelColor(11, gronn);
+
+  if (spiller1Poeng > spiller2Poeng) {
+    ring.setPixelColor(spiller1, gronn);
+    ring.setPixelColor(spiller2, rod);
+  } else if (spiller2Poeng > spiller1Poeng) {
+    ring.setPixelColor(spiller2, gronn);
+    ring.setPixelColor(spiller1, rod);
   } else {
-    ring.setPixelColor(7, gronn);
-    ring.setPixelColor(11, rod);
+    ring.setPixelColor(spiller1, gul);
+    ring.setPixelColor(spiller2, gul);
   }
   ring.show();
 }
