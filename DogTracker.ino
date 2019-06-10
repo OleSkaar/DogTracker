@@ -1,21 +1,29 @@
  /*
-  DogTracker 0.2.5  Alpha
+  DogTracker 0.2.4  Alpha
+
+  Bruker LED-ringen til å vise om nåværende bruker ligger foran eller bak den andre brukeren.
 
   Dings som kan hjelpe til aa motivere hundeeiere ved aa lagre og vise ukentlig treningsprogresjon.
 
   Lar to forskjellige brukere bruke samme dings til å konkurrere. 
+  Denne versjonen bruker LED-ring for å vise om aktiv bruker er foran, lik, eller bak den andre brukeren i poeng.
 
-  Med LED-ring og piezo til feedback, og knapp, slideswitch, og potensiometer som input.
+  Med LED-ringe, piezo, og potentiometer som kontroller
 
   Guide til LED: 
 
   https://learn.adafruit.com/adafruit-neopixel-uberguide/arduino-library-use
+
+  Kode basert paa SDFat sitt eksempel: 
+
+  https://github.com/bgreiman/SdFat/blob/master/examples/ReadWrite/ReadWrite.ino
 
 */
 
 // Import
 #include <Adafruit_NeoPixel.h>
 #include <SPI.h>
+#include "SdFat.h"
 #include <EEPROM.h>
 
 // Oppsett av pins
@@ -29,69 +37,77 @@ uint32_t blaa = ring.Color(0, 0, 255);
 uint32_t rod = ring.Color(255, 0, 0);
 uint32_t gronn = ring.Color(0, 255, 0);
 
-// Innstillinger
-const int ovelserPerDag = 3;
+// oppsett
+//int repetisjoner = 0;
+int ovelserPerDag = 3;
 const int maksRepsPerOvelse = 7;
-const int antallOvelser = 3;
-const int antallBrukere = 2;
-const int startPunktOvelseLED = 11;
-
-// Debounce
-const int debounceTid = 300;
-
-// Debounce repetisjonsknapp
+int antallTrykk = 0;
 int knapp;
+int bryter;
+// debounce 
+const int debounceTid = 300;
 unsigned long sisteDebounceReps = 0;
 boolean harTrykketReps = false;
-
-// Debounce for bytte-bruker-knapp
-int bryter;
 unsigned long sisteDebouncePot = 0;
-boolean harEndretPot = false;
-
-// Variabler som oppdateres globalt
+boolean harTrykketPot = false;
 int sjekkOvelse;
-int aktivOvelse;
-int aktivBruker;
 
-// Potensiometer
+int startPunktOvelseLED = 11;
 int potVal;
 int angle;
-
-// Poengoversikt
-// Aktiv bruker leses fra en bryter som er enten 0 eller 1. 
-// Spiller 1 er 0, spiller 2 er 1. Antall repetisjoner og sett
-// lagres i de todimensjonale arrayne under, hvor variablen aktivBruker
-// brukes som indeksen for aa angi hvilke bruker man skal registrere for 
-// eller lese fra.
+int aktivOvelse;
+int aktivBruker;
+const int antallOvelser = 3;
+const int antallBrukere = 2;
+SdFat SD;
+File dataFil;
+#define SD_CS_PIN SS
 
 int repsPerOvelse[antallBrukere][antallOvelser];
 int brukerOgPoengMatrise[antallBrukere][antallOvelser];
 int aktivOvelsePoeng;
 int ukentligPoeng[antallBrukere];
 
+// brukervariabler
+
+int bruker1Sitt;
+int bruker1Bli;
+int bruker1Kom;
+
+int bruker2Sitt = 0;
+int bruker2Bli = 0;
+int bruker2Kom = 0;
+
 void setup() {
   Serial.begin(9600);
-  // Start LED-ring
   ring.begin();
   ring.setBrightness(32);
   ring.show();
 
+  fyllPoeng();
   sjekkAktivBrukerBryter();
-  int annenBruker = hentAnnenBruker();
 
-  // Hent ukentlige poeng
+  SDKortoppsett();
+  int annenBruker = hentAnnenBruker();
+  //ukentligPoeng[aktivBruker] = hentVerdiIFil(filnavn(aktivBruker));
+  //ukentligPoeng[annenBruker] = hentVerdiIFil(filnavn(annenBruker));
   ukentligPoeng[aktivBruker] = lesFraEEPROM(aktivBruker);
   ukentligPoeng[annenBruker] = lesFraEEPROM(annenBruker);
-
-  // Sjekk aktiv ovelse, oppdater LED
+  Serial.println(aktivBruker);
+  Serial.println(annenBruker);
+  Serial.println(hentVerdiIFil(filnavn(aktivBruker)));
+  Serial.println(hentVerdiIFil(filnavn(annenBruker)));
+  Serial.println("Aktiv bruker poeng:");
+  Serial.println(ukentligPoeng[aktivBruker]);
+  Serial.println("Annen bruker poeng:");
+  Serial.println(ukentligPoeng[annenBruker]);
   aktivOvelse = lesOvelse();
   aktivOvelsePoeng = brukerOgPoengMatrise[aktivBruker][aktivOvelse];
   oppdaterOvelseLED(aktivOvelsePoeng);
-
-  // Oppsett for knapp og piezo
+  
   pinMode(kp, INPUT);
   pinMode(pz, OUTPUT);
+  // Sett opp LED. Brightness gaar fra 0 til 255
 
   hentUkentligPoeng();
   oppdaterUkentligLED();
@@ -113,22 +129,20 @@ void loop() {
   sjekkAktivBrukerBryter();
   sjekkOvelse = lesOvelse();
   byttOvelse(sjekkOvelse);
-
-  // Les aktiv ovelse, debounce signalet, og oppdater hvis endring
+  
   if (sjekkOvelse != aktivOvelse) {
     if (debounce(sisteDebouncePot)) {
-      if (!harEndretPot) {
+      if (!harTrykketPot) {
         byttOvelse(sjekkOvelse); 
       }
-      harEndretPot = true;
+      harTrykketPot = true;
       sisteDebouncePot = millis();
     }
   } else {
-    harEndretPot = false;
+    harTrykketPot = false;
   }
   
- // Hvis man har naadd maks repetisjoner per ovelse, legg til poeng 
- // nullstill repetisjonsLEDs
+ 
   if (repsPerOvelse[aktivBruker][aktivOvelse] == maksRepsPerOvelse) {
     if (aktivOvelsePoeng < ovelserPerDag) {
       brukerOgPoengMatrise[aktivBruker][aktivOvelse]++;
@@ -136,8 +150,7 @@ void loop() {
     }
     reset();
   }
-
-  // Les knapp med debounce, registrer repetisjon hvis trykket inn
+  
   knapp = digitalRead(kp);
   if (knapp == 1) {
     if (digitalRead(kp) == 1 && debounce(sisteDebounceReps)) {
@@ -160,11 +173,12 @@ void buttonClick() {
    // Lys opp en ny LED
    ring.setPixelColor(repsPerOvelse[aktivBruker][aktivOvelse] - 1, hvit);
    ring.show();
+   Serial.println("Knapp trykket");
  }
 
 void reset() {
-  // Nullstill repetisjoner
   repsPerOvelse[aktivBruker][aktivOvelse] = 0;
+  // Fjern LED lys
   resetRepLEDs();
 }
 
@@ -188,28 +202,28 @@ int hentAnnenBruker() {
 }
 
 void fullfortOvelse() {
-  // Lyd fra piezo:
   tone(pz,988,100);
   delay(100);
   tone(pz,1319,850);
   delay(800);
   noTone(pz);
-
-  // Oppdater ring og skriv poeng til EEPROM:
   ring.setPixelColor(startPunktOvelseLED - brukerOgPoengMatrise[aktivBruker][aktivOvelse],blaa);
   ukentligPoeng[aktivBruker]++;
+  Serial.println("Ukentlig poeng lagt til:");
+  Serial.println(ukentligPoeng[aktivBruker]);
+  byte poengIByte = intTilByte(ukentligPoeng[aktivBruker]);
+  //oppdaterVerdiIFil(filnavn(aktivBruker), poengIByte);
   skrivTilEEPROM(ukentligPoeng[aktivBruker]);
+  //Serial.println("Naavaerende poeng for aktiv bruker: ");
+  //Serial.println(hentVerdiIFil(filnavn(aktivBruker)));
   oppdaterUkentligLED();
   lesFraEEPROM(aktivBruker);
 }
 
 void oppdaterOvelseLED(int poeng) {
-  // Nullstill de tre ovelse-LEDene
   ring.setPixelColor(10, 0);
   ring.setPixelColor(9, 0);
   ring.setPixelColor(8, 0);
-
-  // Sjekk antall poeng og oppdater LEDs
   if (poeng >= 1) {
     ring.setPixelColor(10, blaa);
   }
@@ -224,17 +238,11 @@ void oppdaterOvelseLED(int poeng) {
 
 
 void oppdaterUkentligLED() {
-  // Aktiv bruker = LED 11
-  // Annen bruker = LED 7
-  // Hent poeng for aktiv og annen bruker
-  
+  // Aktiv bruker = 11
+  // Annen bruker = 7
   int annenBruker = hentAnnenBruker();
   int aktivBrukerPoeng = ukentligPoeng[aktivBruker];
   int annenBrukerPoeng = ukentligPoeng[annenBruker];
-  
-  // Sammenlign poeng og oppdater. Brukeren som leder skal ha 
-  // gront lys, den andre skal ha rodt. Hvis de har like mye poeng
-  // skal begge ha gult lys
   if (aktivBrukerPoeng == annenBrukerPoeng) {
     ring.setPixelColor(7, gul);
     ring.setPixelColor(11, gul);
@@ -250,26 +258,47 @@ void oppdaterUkentligLED() {
 
 int lesOvelse() {
     potVal = analogRead(potPin);
-    // Konverterer input fra potensiometer til grader
-    
     angle = map(potVal, 0, 1023, 0, 179);
     
     int ovelse = aktivOvelse;
     if (angle >= 0 && angle < 60) {
       ovelse = 0;
+      //Serial.println(angle);
+      Serial.println("kom");
     } else if (angle >= 60 && angle < 120) {
       ovelse = 1;
+      //Serial.println(angle);
+      Serial.println("sitt");
     } else if (angle >= 120 && angle < 180) {
       ovelse = 2;
+      //Serial.println(angle);
+      Serial.println("bli");
     } 
+    
+    /*else {
+      ovelse = aktivOvelse;
+    }
+    */
     
     return ovelse;
 }
 
 
 void byttOvelse(int nyOvelse) {
-    aktivOvelse = nyOvelse;
-    // Sett repLEDs til 0, og fjern repetisjoner paa forrige ovelse
+  
+  if (aktivOvelse != 0 && nyOvelse == 0) {
+      aktivOvelse = 0;
+      Serial.println("Ovelse 0");
+  } else if (aktivOvelse != 1 && nyOvelse == 1) {
+      aktivOvelse = 1;
+      Serial.println("Ovelse 1");
+  } else if (aktivOvelse != 2 && nyOvelse == 2) {
+      aktivOvelse = 2;
+      Serial.println("Ovelse 2");
+  }
+ 
+  aktivOvelse = nyOvelse;
+  // Sett repLEDs til 0, og fjern repetisjoner paa forrige ovelse
     resetRepLEDs();
     fyllRepLEDs();
     oppdaterOvelseLED(brukerOgPoengMatrise[aktivBruker][aktivOvelse]);
@@ -283,8 +312,16 @@ void fyllRepLEDs() {
   ring.show();
 }
 
+void fyllPoeng() {
+  brukerOgPoengMatrise[0][0] = 0;
+  brukerOgPoengMatrise[0][1] = 0;
+  brukerOgPoengMatrise[0][2] = 0;
+  brukerOgPoengMatrise[1][0] = bruker2Kom;
+  brukerOgPoengMatrise[1][1] = bruker2Sitt;
+  brukerOgPoengMatrise[1][2] = bruker2Bli;
+}
+
 void hentUkentligPoeng() {
-  // Hent ukentlig poeng fra matrisene til global variabel
   for (int i = 0; i < antallBrukere; i++) {
     for (int j = 0; j < antallOvelser; j++) {
       ukentligPoeng[i] += brukerOgPoengMatrise[i][j];
@@ -292,13 +329,53 @@ void hentUkentligPoeng() {
   }
 }
 
+void oppdaterVerdiIFil(String filN, String nyVerdi) {
+  File filen = SD.open(filN, FILE_WRITE);
+  filen.remove();
+  filen = SD.open(filN, FILE_WRITE);
+  filen.println(nyVerdi);
+  filen.close();
+}
+byte hentVerdiIFil(String filN) {
+  File filen = SD.open(filN);
+  byte verdi;
+  while (filen.available()) {
+    verdi += filen.read();
+  }
+  filen.close();
+  return verdi;
+}
+
 void skrivTilEEPROM(int verdi) {
   EEPROM.write(aktivBruker, verdi);
 }
 
 byte lesFraEEPROM(int bruker) {
-  // Henter data fra EEPROM-minne, og 
   byte verdi;
   verdi = EEPROM.read(bruker);
+  Serial.print(bruker);
+  Serial.print("\t");
+  Serial.print(verdi, DEC);
+  Serial.println();
   return verdi;
+}
+
+void SDKortoppsett() {
+    // Kobler opp SD-kort
+  if (!SD.begin(SD_CS_PIN)) {
+    Serial.println("Oppsett av SD-kort feilet.");
+    return;
+  }
+  Serial.println("Oppsett av SD-kort fullført.");
+}
+
+String filnavn(int bruker) {
+  String filNavn = "bruker" + String(bruker) + ".txt";
+  return filNavn;
+}
+
+byte intTilByte (int verdi) {
+  if (verdi < 256 && verdi > 0) {
+    return (byte) verdi;
+  }
 }
