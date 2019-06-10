@@ -7,6 +7,8 @@
 
   Med LED-ring og piezo til feedback, og knapp, slideswitch, og potensiometer som input.
 
+  Poeng lagres i EEPROM-minnet til Arduino, ettersom det ikke er behov for stor lagringsplass.
+
   Guide til LED: 
 
   https://learn.adafruit.com/adafruit-neopixel-uberguide/arduino-library-use
@@ -44,7 +46,8 @@ int knapp;
 unsigned long sisteDebounceReps = 0;
 boolean harTrykketReps = false;
 
-// Debounce for bytte-bruker-knapp
+// Debounce for bytte ovelse, for aa unngaa at input fra potensiometer
+// "hopper" fram og tilbake
 int bryter;
 unsigned long sisteDebouncePot = 0;
 boolean harEndretPot = false;
@@ -293,7 +296,11 @@ void hentUkentligPoeng() {
 }
 
 void skrivTilEEPROM(int verdi) {
-  EEPROM.write(aktivBruker, verdi);
+  // Sjekk om verdi ikke er storre enn en byte
+  if (verdi < 256 && verdi >= 0) {
+    EEPROM.write(aktivBruker, verdi);
+  }
+  
 }
 
 byte lesFraEEPROM(int bruker) {
